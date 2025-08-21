@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: arc-aggregator
+
+# Application specific configuration
+app:
+  # Splunk configuration
+  splunk:
+    base-url: ${SPLUNK_BASE_URL:https://your-splunk-instance.com:8089}
+    auth-token: ${SPLUNK_AUTH_TOKEN:your-splunk-auth-token}
+    username: ${SPLUNK_USERNAME:your-splunk-username}
+    password: ${SPLUNK_PASSWORD:your-splunk-password}
+  
+  # Output directory for CSV files
+  output-directory: ${OUTPUT_DIRECTORY:output}
+
+# Management endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging configuration
+logging:
+  level:
+    com.arc.aggregator: INFO
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n" 

@@ -1,0 +1,83 @@
+Splunk Query Results
+    ↓
+Aggregator Layer
+    (Collects logs, normalizes schema, applies filters)
+    ↓
+Processing Layer
+    (Cleans invalid rows, deduplicates, converts timestamps, enriches with metadata)
+    ↓
+Storage
+    (CSV dump → later Database → archived)
+
+
+Data Sources (Splunk, ITSM, Central API, JIRA, Rally, AppSec)
+    ↓
+Aggregator Layer
+    (Fetch data from APIs, normalize formats, unify schema)
+    ↓
+Processing Layer
+    (Transform, enrich, validate, deduplicate)
+    ↓
+Storage & Reporting
+    (CSV files → Databases → Reports / Dashboards)
+
+
+Scheduler (01:05 UTC)
+  ↓
+Window Planner (compute [start,end])
+  ↓
+Aggregator: Splunk Adapter (dispatch saved search → get SID → stream results)
+  ↓
+Aggregator: Normalize (map fields to canonical)
+  ↓
+Aggregator: Validate (JSON Schema → bad rows → DLQ)
+  ↓
+Aggregator: Idempotence (event_id = sha256(...))
+  ↓
+Aggregator: Reduce (latest per platform/env/api)
+  ↓
+Processing: Diff (compare with last snapshot → change_summary)
+  ↓
+Processing: Persist (Phase 1: CSV / NDJSON → Phase 2+: DB JSONB/Mongo)
+  ↓
+Processing: Notify/Expose (optional: snapshotReady event / read API)
+
+Sources: Splunk (now) + ITSM/Jira/Central/Rally/AppSec (later)
+  ↓
+Aggregator Layer: Fetch → Normalize → Validate → Idempotence → Reduce
+  ↓
+Processing Layer: Diff → Persist (CSV → DB) → Expose/Notify
+  ↓
+Consumers: Arc Portal / Other Dashboards
+
+Actor: Scheduler (cron @ 01:05 UTC) OR Admin (manual run)
+
+1) Scheduler/Admin
+   -> WindowPlanner : compute [start,end] window (yesterday or given)
+
+2) WindowPlanner
+   -> IngestionService : run(start,end)
+
+3) IngestionService
+   -> SplunkSavedSearchService : dispatchSavedSearch(name, start, end)
+
+4) SplunkSavedSearchService
+   -> Splunk REST : POST /servicesNS/{owner}/{app}/saved/searches/{name}/dispatch
+   <- Splunk REST : SID (search job id)
+
+5) IngestionService
+   -> SplunkSavedSearchService : streamResults(SID)
+SplunkSavedSearchService
+   -> Splunk REST : GET /services/search/jobs/{sid}/results?output_mode=json&count=0
+   <- Splunk REST : rows (paged/streamed)
+
+-- For each row -------------------------
+6) IngestionService -> RowFlattener : flatten nested JSON to dot keys
+7) IngestionService -> FieldSelector : select/rename output columns (optional)
+8) IngestionService -> CsvWriter : buffer row (ensure stable header)
+----------------------------------------
+
+9) IngestionService -> CsvWriter : finalize file (temp → move atomically)
+10) IngestionService -> Metrics : rows.raw, rows.written, run.duration.ms, run.success
+11) IngestionService -> WindowPlanner : mark window complete
+12) IngestionService -> Response : return path to CSV (if manual run)
